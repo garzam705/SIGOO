@@ -10,9 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'sigoo-secreto-2025')
-CORS(app)
-
+CORS(app, origins=["https://sigoos.netlify.app"])  # permite solo tu frontend
 DATABASE = 'sigoo.db'
 
 # ── DB helpers ────────────────────────────────────────────────
