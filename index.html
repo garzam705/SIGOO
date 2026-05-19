@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIGOO — Control Total</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+    <!-- ══════════ PANTALLA DE AUTH ══════════ -->
+    <div id="auth-section">
+        <div class="auth-wrapper">
+            <div class="auth-brand">
+                <div class="brand-logo">S</div>
+                <h1 class="brand-name">SIGOO</h1>
+                <p class="brand-tagline">Sistema Integral de Gestión de Órdenes y Operaciones</p>
+            </div>
+
+            <div class="auth-card">
+                <div class="tab-buttons">
+                    <button id="show-login" class="tab-btn active">Iniciar Sesión</button>
+                    <button id="show-register" class="tab-btn">Registrarse</button>
+                </div>
+
+                <!-- Login -->
+                <form id="login-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="login-email">Correo electrónico</label>
+                        <input type="email" id="login-email" placeholder="correo@ejemplo.com" autocomplete="email" required>
+                        <span class="field-error" id="err-login-email"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Contraseña</label>
+                        <div class="input-eye">
+                            <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required>
+                            <button type="button" class="eye-btn" data-target="login-password">👁</button>
+                        </div>
+                        <span class="field-error" id="err-login-password"></span>
+                    </div>
+                    <button type="submit" class="btn-primary" id="login-submit">
+                        <span class="btn-text">Entrar</span>
+                        <span class="btn-spinner hidden">⟳</span>
+                    </button>
+                </form>
+
+                <!-- Registro -->
+                <form id="register-form" class="auth-form hidden">
+                    <div class="form-group">
+                        <label for="reg-name">Nombre completo</label>
+                        <input type="text" id="reg-name" placeholder="Juan Pérez" required>
+                        <span class="field-error" id="err-reg-name"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-email">Correo electrónico</label>
+                        <input type="email" id="reg-email" placeholder="correo@ejemplo.com" required>
+                        <span class="field-error" id="err-reg-email"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-password">Contraseña <small>(mín. 6 caracteres)</small></label>
+                        <div class="input-eye">
+                            <input type="password" id="reg-password" placeholder="••••••••" required>
+                            <button type="button" class="eye-btn" data-target="reg-password">👁</button>
+                        </div>
+                        <div class="strength-bar"><div id="strength-fill"></div></div>
+                        <span class="field-error" id="err-reg-password"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-role">Tipo de cuenta</label>
+                        <select id="reg-role">
+                            <option value="client">Cliente</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-primary" id="register-submit">
+                        <span class="btn-text">Crear cuenta</span>
+                        <span class="btn-spinner hidden">⟳</span>
+                    </button>
+                </form>
+
+                <div id="auth-message" class="auth-message hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════ DASHBOARD ══════════ -->
+    <div id="dashboard" class="hidden">
+        <aside id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-logo-sm">S</div>
+                <span>SIGOO</span>
+            </div>
+            <nav id="sidebar-nav">
+                <!-- Admin nav items -->
+                <div class="nav-admin hidden">
+                    <button class="nav-item active" data-view="orders">
+                        <span class="nav-icon">📋</span> Órdenes
+                    </button>
+                    <button class="nav-item" data-view="inventory">
+                        <span class="nav-icon">📦</span> Inventario
+                    </button>
+                    <button class="nav-item" data-view="new-order">
+                        <span class="nav-icon">➕</span> Nueva Orden
+                    </button>
+                </div>
+                <!-- Client nav items -->
+                <div class="nav-client hidden">
+                    <button class="nav-item active" data-view="my-orders">
+                        <span class="nav-icon">📋</span> Mis Órdenes
+                    </button>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-chip">
+                    <div class="user-avatar" id="user-avatar">?</div>
+                    <div>
+                        <div class="user-name" id="user-name">—</div>
+                        <div class="user-role" id="user-role">—</div>
+                    </div>
+                </div>
+                <button id="logout-btn" class="logout-btn" title="Cerrar sesión">⏻</button>
+            </div>
+        </aside>
+
+        <main id="main-content">
+
+            <!-- ── Vista: Kanban de órdenes (admin) ── -->
+            <div id="view-orders" class="view active">
+                <div class="view-header">
+                    <h2>Órdenes de Servicio</h2>
+                    <button class="btn-secondary" onclick="loadOrders()">↺ Actualizar</button>
+                </div>
+                <div id="kanban-board" class="kanban">
+                    <div class="column">
+                        <div class="col-header recibido">Recibido</div>
+                        <div class="card-container" data-status="Recibido"></div>
+                    </div>
+                    <div class="column">
+                        <div class="col-header diagnostico">Diagnóstico</div>
+                        <div class="card-container" data-status="Diagnostico"></div>
+                    </div>
+                    <div class="column">
+                        <div class="col-header reparado">Reparado</div>
+                        <div class="card-container" data-status="Reparado"></div>
+                    </div>
+                    <div class="column">
+                        <div class="col-header entregado">Entregado</div>
+                        <div class="card-container" data-status="Entregado"></div>
+                    </div>
+                </div>
+                <div id="orders-empty" class="empty-state hidden">
+                    <div class="empty-icon">📋</div>
+                    <p>No hay órdenes registradas aún.</p>
+                </div>
+            </div>
+
+            <!-- ── Vista: Inventario (admin) ── -->
+            <div id="view-inventory" class="view hidden">
+                <div class="view-header">
+                    <h2>Inventario de Productos</h2>
+                    <button class="btn-secondary" onclick="loadInventory()">↺ Actualizar</button>
+                </div>
+
+                <!-- Agregar item -->
+                <div class="card-section">
+                    <h3>Agregar Producto</h3>
+                    <form id="add-inventory-form" class="inline-form">
+                        <div class="form-group">
+                            <label for="inv-name">Nombre del producto</label>
+                            <input type="text" id="inv-name" placeholder="Ej. Pantalla LCD 6.5"" required>
+                            <span class="field-error" id="err-inv-name"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="inv-qty">Cantidad inicial</label>
+                            <input type="number" id="inv-qty" placeholder="0" min="0" required>
+                            <span class="field-error" id="err-inv-qty"></span>
+                        </div>
+                        <button type="submit" class="btn-primary">+ Agregar</button>
+                    </form>
+                </div>
+
+                <!-- Tabla de inventario -->
+                <div class="card-section">
+                    <h3>Existencias actuales</h3>
+                    <div id="inventory-table-wrap">
+                        <table id="inventory-table" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Producto</th>
+                                    <th>Cantidad</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-body"></tbody>
+                        </table>
+                        <div id="inventory-empty" class="empty-state hidden">
+                            <div class="empty-icon">📦</div>
+                            <p>El inventario está vacío.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Vista: Nueva Orden (admin) ── -->
+            <div id="view-new-order" class="view hidden">
+                <div class="view-header">
+                    <h2>Registrar Nueva Orden</h2>
+                </div>
+                <div class="card-section" style="max-width:520px">
+                    <form id="new-order-form">
+                        <div class="form-group">
+                            <label for="order-client-id">ID del Cliente</label>
+                            <input type="number" id="order-client-id" placeholder="Ej. 3" min="1" required>
+                            <span class="field-error" id="err-order-client"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="order-description">Descripción del servicio</label>
+                            <textarea id="order-description" rows="3" placeholder="Describe el equipo y el problema..." required></textarea>
+                            <span class="field-error" id="err-order-desc"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="order-cost">Presupuesto estimado ($) <small>opcional</small></label>
+                            <input type="number" id="order-cost" placeholder="0.00" min="0" step="0.01">
+                        </div>
+                        <button type="submit" class="btn-primary">Generar Folio</button>
+                    </form>
+                    <div id="new-order-feedback" class="feedback-box hidden"></div>
+                </div>
+            </div>
+
+            <!-- ── Vista: Mis Órdenes (cliente) ── -->
+            <div id="view-my-orders" class="view hidden">
+                <div class="view-header">
+                    <h2>Mis Órdenes</h2>
+                    <button class="btn-secondary" onclick="loadClientOrders()">↺ Actualizar</button>
+                </div>
+                <div id="client-orders" class="client-orders-grid"></div>
+                <div id="client-empty" class="empty-state hidden">
+                    <div class="empty-icon">📋</div>
+                    <p>Aún no tienes órdenes registradas.</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ══════════ TOAST ══════════ -->
+    <div id="toast" class="toast hidden"></div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
