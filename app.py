@@ -12,6 +12,10 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# Configuración
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cambia-esta-clave-en-produccion')
+DATABASE = os.path.join(os.path.dirname(__file__), 'sigoo.db')
+
 # ── DB helpers ────────────────────────────────────────────────
 def get_db():
     db = getattr(g, '_database', None)
@@ -29,17 +33,22 @@ def close_connection(exception):
 def init_db():
     with app.app_context():
         db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-        try:
-            db.execute(
-                "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
-                ('admin@sigoo.com', generate_password_hash('admin123'), 'Administrador', 'admin')
-            )
+        cursor = db.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        if not cursor.fetchone():
+            schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+            with open(schema_path, 'r') as f:
+                db.cursor().executescript(f.read())
             db.commit()
-        except sqlite3.IntegrityError:
-            pass
+            # Usuario admin por defecto
+            try:
+                db.execute(
+                    "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
+                    ('admin@sigoo.com', generate_password_hash('admin123'), 'Administrador', 'admin')
+                )
+                db.commit()
+            except sqlite3.IntegrityError:
+                pass
 
 # ── Decoradores ───────────────────────────────────────────────
 def token_required(f):
