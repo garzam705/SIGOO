@@ -1,22 +1,28 @@
-# app.py — SIGOO Backend
-# Autenticación de Google eliminada; solo email/contraseña
+# app.py — SIGOO Backend completo
+# Autenticación por email/contraseña, JWT, SQLite
 import os
 import sqlite3
 import jwt
 import datetime
+import re
 from functools import wraps
 from flask import Flask, request, jsonify, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+# Permitir CORS desde tu frontend en Netlify (ajusta si cambia la URL)
+CORS(app, origins=["https://sigoo.netlify.app", "http://localhost:5500", "https://sigoo.onrender.com"])
 
-# Configuración
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cambia-esta-clave-en-produccion')
+# ═══════════════════════════════════════════════════════════════
+# CONFIGURACIÓN
+# ═══════════════════════════════════════════════════════════════
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'clave-super-segura-cambiar-en-produccion')
 DATABASE = os.path.join(os.path.dirname(__file__), 'sigoo.db')
 
-# ── DB helpers ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# BASE DE DATOS (helpers)
+# ═══════════════════════════════════════════════════════════════
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
@@ -31,26 +37,46 @@ def close_connection(exception):
         db.close()
 
 def init_db():
+    """Crea las tablas si no existen y agrega un usuario administrador por defecto."""
     with app.app_context():
         db = get_db()
         cursor = db.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if not cursor.fetchone():
             schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+            if not os.path.exists(schema_path):
+                print("ERROR: No se encuentra el archivo schema.sql en", schema_path)
+                return
             with open(schema_path, 'r') as f:
                 db.cursor().executescript(f.read())
             db.commit()
-            # Usuario admin por defecto
+            # Insertar admin por defecto
             try:
                 db.execute(
                     "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
                     ('admin@sigoo.com', generate_password_hash('admin123'), 'Administrador', 'admin')
                 )
                 db.commit()
+                print("Usuario admin creado correctamente.")
             except sqlite3.IntegrityError:
                 pass
 
-# ── Decoradores ───────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# UTILIDADES
+# ═══════════════════════════════════════════════════════════════
+def validate_email(email):
+    return bool(re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email))
+
+def make_token(user):
+    return jwt.encode({
+        'user_id': user['id'],
+        'role': user['role'],
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    }, app.config['SECRET_KEY'], algorithm='HS256')
+
+# ═══════════════════════════════════════════════════════════════
+# DECORADORES
+# ═══════════════════════════════════════════════════════════════
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -58,9 +84,9 @@ def token_required(f):
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'error': 'Token requerido'}), 401
         try:
-            tok  = auth_header.split(' ')[1]
+            tok = auth_header.split(' ')[1]
             data = jwt.decode(tok, app.config['SECRET_KEY'], algorithms=['HS256'])
-            g.current_user_id   = data['user_id']
+            g.current_user_id = data['user_id']
             g.current_user_role = data['role']
         except jwt.ExpiredSignatureError:
             return jsonify({'error': 'Sesión expirada, inicia sesión nuevamente'}), 401
@@ -77,42 +103,23 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# ── Validaciones comunes ──────────────────────────────────────
-def validate_email(email):
-    import re
-    return bool(re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email))
+# ═══════════════════════════════════════════════════════════════
+# RUTAS PÚBLICAS
+# ═══════════════════════════════════════════════════════════════
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({'status': 'ok', 'message': 'Backend SIGOO funcionando correctamente'})
 
-def make_token(user):
-    return jwt.encode({
-        'user_id': user['id'],
-        'role':    user['role'],
-        'exp':     datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-    }, app.config['SECRET_KEY'], algorithm='HS256')
-
-def user_response(user, tok):
-    return jsonify({
-        'token': tok,
-        'user': {
-            'id':    user['id'],
-            'name':  user['name'],
-            'email': user['email'],
-            'role':  user['role']
-        }
-    })
-
-# ════════════════════════════════════════════════════════════════
-#  1. REGISTRO
-# ════════════════════════════════════════════════════════════════
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
+    if request.method == 'OPTIONS':
+        return '', 200
     data = request.get_json() or {}
-
-    email    = data.get('email', '').strip().lower()
+    email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    name     = data.get('name', '').strip()
-    role     = data.get('role', 'client')
+    name = data.get('name', '').strip()
+    role = data.get('role', 'client')
 
-    # ── Validaciones ──
     errors = {}
     if not name or len(name) < 2:
         errors['name'] = 'El nombre debe tener al menos 2 caracteres'
@@ -136,14 +143,12 @@ def register():
     except sqlite3.IntegrityError:
         return jsonify({'error': 'El correo ya está registrado'}), 409
 
-# ════════════════════════════════════════════════════════════════
-#  2. LOGIN
-# ════════════════════════════════════════════════════════════════
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return '', 200
     data = request.get_json() or {}
-
-    email    = data.get('email', '').strip().lower()
+    email = data.get('email', '').strip().lower()
     password = data.get('password', '')
 
     if not email or not password:
@@ -151,28 +156,37 @@ def login():
     if not validate_email(email):
         return jsonify({'error': 'Correo electrónico inválido'}), 400
 
-    db   = get_db()
+    db = get_db()
     user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-
     if not user or not check_password_hash(user['password_hash'], password):
         return jsonify({'error': 'Correo o contraseña incorrectos'}), 401
 
-    return user_response(user, make_token(user))
+    token = make_token(user)
+    return jsonify({
+        'token': token,
+        'user': {
+            'id': user['id'],
+            'name': user['name'],
+            'email': user['email'],
+            'role': user['role']
+        }
+    })
 
-# ════════════════════════════════════════════════════════════════
-#  3. ALTA DE ORDEN (solo admin)
-# ════════════════════════════════════════════════════════════════
-@app.route('/api/orders', methods=['POST'])
+# ═══════════════════════════════════════════════════════════════
+# ÓRDENES (solo admin puede crear, pero clientes pueden ver sus órdenes)
+# ═══════════════════════════════════════════════════════════════
+@app.route('/api/orders', methods=['POST', 'OPTIONS'])
 @token_required
 @admin_required
 def create_order():
+    if request.method == 'OPTIONS':
+        return '', 200
     data = request.get_json() or {}
-
-    client_id      = data.get('client_id')
-    description    = data.get('description', '').strip()
+    client_id = data.get('client_id')
+    description = data.get('description', '').strip()
     estimated_cost = data.get('estimated_cost', 0)
 
-    # ── Validaciones ──
+    # Validaciones
     if not client_id or not isinstance(client_id, int) or client_id <= 0:
         return jsonify({'error': 'El ID del cliente es obligatorio y debe ser un número positivo'}), 400
     if not description or len(description) < 5:
@@ -184,7 +198,7 @@ def create_order():
     except (TypeError, ValueError):
         estimated_cost = 0.0
 
-    db     = get_db()
+    db = get_db()
     client = db.execute(
         "SELECT id FROM users WHERE id = ? AND role = 'client'", (client_id,)
     ).fetchone()
@@ -205,12 +219,9 @@ def create_order():
     )
     db.commit()
     new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    order  = db.execute("SELECT * FROM orders WHERE id = ?", (new_id,)).fetchone()
+    order = db.execute("SELECT * FROM orders WHERE id = ?", (new_id,)).fetchone()
     return jsonify(dict(order)), 201
 
-# ════════════════════════════════════════════════════════════════
-#  4. CONSULTA DE ÓRDENES
-# ════════════════════════════════════════════════════════════════
 @app.route('/api/orders', methods=['GET'])
 @token_required
 def get_orders():
@@ -227,7 +238,7 @@ def get_orders():
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
 @token_required
 def get_order(order_id):
-    db    = get_db()
+    db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order:
         return jsonify({'error': 'Orden no encontrada'}), 404
@@ -235,21 +246,23 @@ def get_order(order_id):
         return jsonify({'error': 'Acceso no autorizado'}), 403
     return jsonify(dict(order))
 
-# ════════════════════════════════════════════════════════════════
-#  5. ACTUALIZACIÓN DE ESTADO (Kanban, admin)
-# ════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ACTUALIZACIÓN DE ESTADO (Kanban, solo admin)
+# ═══════════════════════════════════════════════════════════════
 ALLOWED_TRANSITIONS = {
-    'Recibido':   ['Diagnostico'],
+    'Recibido': ['Diagnostico'],
     'Diagnostico': ['Reparado'],
-    'Reparado':   ['Entregado'],
-    'Entregado':  []
+    'Reparado': ['Entregado'],
+    'Entregado': []
 }
 
-@app.route('/api/orders/<int:order_id>/status', methods=['PUT'])
+@app.route('/api/orders/<int:order_id>/status', methods=['PUT', 'OPTIONS'])
 @token_required
 @admin_required
 def update_status(order_id):
-    db    = get_db()
+    if request.method == 'OPTIONS':
+        return '', 200
+    db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order:
         return jsonify({'error': 'Orden no encontrada'}), 404
@@ -270,13 +283,17 @@ def update_status(order_id):
     updated = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     return jsonify(dict(updated))
 
-# Autorización de presupuesto (cliente)
-@app.route('/api/orders/<int:order_id>/authorize', methods=['PUT'])
+# ═══════════════════════════════════════════════════════════════
+# AUTORIZACIÓN DE PRESUPUESTO (cliente)
+# ═══════════════════════════════════════════════════════════════
+@app.route('/api/orders/<int:order_id>/authorize', methods=['PUT', 'OPTIONS'])
 @token_required
 def authorize_order(order_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     if g.current_user_role != 'client':
         return jsonify({'error': 'Solo el cliente puede autorizar el presupuesto'}), 403
-    db    = get_db()
+    db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order or order['client_id'] != g.current_user_id:
         return jsonify({'error': 'Orden no encontrada o no te pertenece'}), 404
@@ -289,23 +306,25 @@ def authorize_order(order_id):
     db.commit()
     return jsonify({'message': 'Presupuesto autorizado correctamente'})
 
-# ════════════════════════════════════════════════════════════════
-#  INVENTARIO
-# ════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# INVENTARIO (solo admin)
+# ═══════════════════════════════════════════════════════════════
 @app.route('/api/inventory', methods=['GET'])
 @token_required
 @admin_required
 def get_inventory():
-    db    = get_db()
+    db = get_db()
     items = db.execute("SELECT * FROM inventory ORDER BY name").fetchall()
     return jsonify([dict(item) for item in items])
 
-@app.route('/api/inventory', methods=['POST'])
+@app.route('/api/inventory', methods=['POST', 'OPTIONS'])
 @token_required
 @admin_required
 def add_inventory_item():
-    data     = request.get_json() or {}
-    name     = data.get('name', '').strip()
+    if request.method == 'OPTIONS':
+        return '', 200
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
     quantity = data.get('quantity', 0)
 
     if not name or len(name) < 2:
@@ -314,23 +333,28 @@ def add_inventory_item():
         return jsonify({'error': 'La cantidad debe ser un número entero no negativo'}), 400
 
     db = get_db()
-    db.execute("INSERT INTO inventory (name, quantity) VALUES (?, ?)", (name, quantity))
-    db.commit()
-    new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    item   = db.execute("SELECT * FROM inventory WHERE id = ?", (new_id,)).fetchone()
-    return jsonify(dict(item)), 201
+    try:
+        db.execute("INSERT INTO inventory (name, quantity) VALUES (?, ?)", (name, quantity))
+        db.commit()
+        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        item = db.execute("SELECT * FROM inventory WHERE id = ?", (new_id,)).fetchone()
+        return jsonify(dict(item)), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Ya existe un producto con ese nombre'}), 409
 
-@app.route('/api/inventory/<int:item_id>', methods=['PUT'])
+@app.route('/api/inventory/<int:item_id>', methods=['PUT', 'OPTIONS'])
 @token_required
 @admin_required
 def update_inventory(item_id):
-    data    = request.get_json() or {}
+    if request.method == 'OPTIONS':
+        return '', 200
+    data = request.get_json() or {}
     new_qty = data.get('quantity')
 
     if not isinstance(new_qty, int) or new_qty < 0:
         return jsonify({'error': 'La cantidad debe ser un número entero no negativo'}), 400
 
-    db   = get_db()
+    db = get_db()
     item = db.execute("SELECT * FROM inventory WHERE id = ?", (item_id,)).fetchone()
     if not item:
         return jsonify({'error': 'Producto no encontrado'}), 404
@@ -340,9 +364,11 @@ def update_inventory(item_id):
     updated = db.execute("SELECT * FROM inventory WHERE id = ?", (item_id,)).fetchone()
     return jsonify(dict(updated))
 
-# ════════════════════════════════════════════════════════════════
-# Inicializar BD al arrancar (Render usa gunicorn, no __main__)
+# ═══════════════════════════════════════════════════════════════
+# INICIALIZAR BASE DE DATOS AL ARRANCAR
+# ═══════════════════════════════════════════════════════════════
 init_db()
 
 if __name__ == '__main__':
     app.run(debug=False, port=5000)
+    
