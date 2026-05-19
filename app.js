@@ -3,7 +3,7 @@
 //  Sin autenticación de Google; todo en Netlify (frontend estático)
 // ═══════════════════════════════════════════
 
-const API = 'https://api.render.com/deploy/srv-d85srgmk1jcs73f30510?key=2kRJyZoLarM'; // Cambia a tu URL de backend en producción
+const API = 'https://sigoo.onrender.com'; // Cambia a tu URL de backend en producción
 
 let token = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
