@@ -360,6 +360,9 @@ def update_order(order_id):
 @admin_required
 def delete_order(order_id):
     db = get_db()
+    order = db.execute("SELECT id FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        return jsonify({'error': 'Orden no encontrada'}), 404
     db.execute("DELETE FROM orders WHERE id = ?", (order_id,))
     db.commit()
     return jsonify({'message': 'Orden eliminada'})
